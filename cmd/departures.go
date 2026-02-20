@@ -29,17 +29,18 @@ var departuresCmd = &cobra.Command{
 	Short: "Get real-time departures from a stop",
 	Long: `Get real-time departures from a stop. Specify by site ID, stop name, or address.
 
-When using --address, the CLI geocodes the address, finds nearby stops,
-and returns departures from the closest stop(s) that serve the requested line/mode.
+When using --address, the CLI geocodes the address and finds nearby stops.
+Without --line or --mode, it returns departures from ALL nearby stops.
+With --line or --mode, it finds the nearest stop serving that line/mode.
 
 Also fetches relevant service deviations and shows them inline.
 
 Examples:
   sl departures --site 9530                                  # By site ID
   sl departures --stop "Medborgarplatsen"                    # By stop name
-  sl departures --address "Magnus Ladulåsgatan 7" --line 55  # By address + line
+  sl departures --address "Magnus Ladulåsgatan 7"            # All nearby stops
+  sl departures --address "Magnus Ladulåsgatan 7" --line 55  # Nearest with line 55
   sl departures --address "Drottninggatan 45" --mode TRAIN   # Nearest train
-  sl departures --address "Stureplan" --mode METRO           # Nearest metro
   sl departures --site 9530 --json                           # JSON for agents`,
 	Aliases: []string{"dep", "d"},
 	RunE:    runDepartures,
@@ -52,7 +53,7 @@ func init() {
 	departuresCmd.Flags().StringVar(&depLine, "line", "", "Filter by line designation (e.g. 55, 18)")
 	departuresCmd.Flags().StringVar(&depMode, "mode", "", "Filter by transport mode (BUS, METRO, TRAIN, TRAM, SHIP)")
 	departuresCmd.Flags().IntVar(&depDirection, "direction", 0, "Filter by direction (1 or 2)")
-	departuresCmd.Flags().IntVar(&depLimit, "limit", 20, "Max departures to show")
+	departuresCmd.Flags().IntVar(&depLimit, "limit", 20, "Max departures per stop")
 	departuresCmd.Flags().Float64Var(&depRadius, "radius", 1.0, "Search radius in km when using --address")
 
 	rootCmd.AddCommand(departuresCmd)
@@ -111,15 +112,71 @@ func runDeparturesByAddress(ctx context.Context, client *api.Client) error {
 		return fmt.Errorf("no stops found within %.0fm of %q", depRadius*1000, depAddress)
 	}
 
+	// With --line or --mode: find first matching stop (original behavior)
 	if depLine != "" || depMode != "" {
 		return departuresFromNearestMatching(ctx, client, nearby)
 	}
 
-	closest := nearby[0]
-	if !jsonOutput {
-		fmt.Fprintf(os.Stderr, "🚏 Nearest stop: %s (%dm)\n\n", closest.Site.Name, int(closest.DistanceKm*1000))
+	// Without filters: return departures from ALL nearby stops
+	return departuresFromAllNearby(ctx, client, nearby)
+}
+
+// departuresFromAllNearby fetches departures from all nearby stops and returns
+// a consolidated result. This is the default when using --address without --line/--mode.
+func departuresFromAllNearby(ctx context.Context, client *api.Client, nearby []api.SiteWithDistance) error {
+	maxScan := 5
+	if len(nearby) < maxScan {
+		maxScan = len(nearby)
 	}
-	return fetchAndPrintDepartures(ctx, client, closest.Site.ID, closest.Site.Name, int(closest.DistanceKm*1000))
+
+	results := []departureResult{}
+	var allDeps []model.ParsedDeparture
+
+	for _, stop := range nearby[:maxScan] {
+		resp, err := client.GetDepartures(ctx, api.DepartureOptions{
+			SiteID:    stop.Site.ID,
+			Direction: depDirection,
+		})
+		if err != nil {
+			continue
+		}
+
+		parsed := api.ParseDepartures(resp.Departures)
+		if len(parsed) == 0 {
+			continue
+		}
+
+		if depLimit > 0 && len(parsed) > depLimit {
+			parsed = parsed[:depLimit]
+		}
+
+		allDeps = append(allDeps, parsed...)
+		deviations := fetchRelevantDeviations(ctx, client, parsed)
+
+		results = append(results, departureResult{
+			Stop:       stop.Site.Name,
+			SiteID:     stop.Site.ID,
+			DistanceM:  int(stop.DistanceKm * 1000),
+			Departures: parsed,
+			Deviations: deviations,
+		})
+	}
+
+	if len(results) == 0 {
+		return fmt.Errorf("no departures found at any stop within %.0fm of %q", depRadius*1000, depAddress)
+	}
+
+	if jsonOutput {
+		return format.JSON(results)
+	}
+
+	// Human-readable: print each stop
+	for _, r := range results {
+		fmt.Fprintf(os.Stderr, "🚏 %s (%dm)\n", r.Stop, r.DistanceM)
+		format.Departures(r.Departures, r.Stop)
+		format.DeviationWarnings(r.Deviations)
+	}
+	return nil
 }
 
 func departuresFromNearestMatching(ctx context.Context, client *api.Client, nearby []api.SiteWithDistance) error {
@@ -162,7 +219,6 @@ func departuresFromNearestMatching(ctx context.Context, client *api.Client, near
 				stop.Site.Name, int(stop.DistanceKm*1000), filterDesc)
 		}
 
-		// Fetch deviations for the lines we found
 		deviations := fetchRelevantDeviations(ctx, client, parsed)
 
 		if depLimit > 0 && len(parsed) > depLimit {
@@ -187,16 +243,14 @@ func departuresFromNearestMatching(ctx context.Context, client *api.Client, near
 	return fmt.Errorf("%s not found at any stop within %.0fm of %q", filterDesc, depRadius*1000, depAddress)
 }
 
-// departureResult is the consistent JSON output for all departures queries.
+// departureResult is the consistent JSON output for departures queries.
 type departureResult struct {
-	Stop       string                  `json:"stop"`
-	SiteID     int                     `json:"site_id"`
-	DistanceM  int                     `json:"distance_m"`
-	Departures []model.ParsedDeparture `json:"departures"`
-	Deviations []format.DeviationWarning      `json:"deviations"`
+	Stop       string                    `json:"stop"`
+	SiteID     int                       `json:"site_id"`
+	DistanceM  int                       `json:"distance_m"`
+	Departures []model.ParsedDeparture   `json:"departures"`
+	Deviations []format.DeviationWarning `json:"deviations"`
 }
-
-
 
 func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int, stopName string, distanceM int) error {
 	resp, err := client.GetDepartures(ctx, api.DepartureOptions{
@@ -214,7 +268,6 @@ func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int
 		parsed = api.FilterByTransportMode(parsed, depMode)
 	}
 
-	// Fetch deviations for the lines we found
 	deviations := fetchRelevantDeviations(ctx, client, parsed)
 
 	if depLimit > 0 && len(parsed) > depLimit {
@@ -245,7 +298,6 @@ func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int
 
 // fetchRelevantDeviations fetches deviations for lines present in the departures.
 func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []model.ParsedDeparture) []format.DeviationWarning {
-	// Collect unique line IDs
 	lineSet := make(map[string]bool)
 	for _, d := range deps {
 		if d.Line != "" {
@@ -257,7 +309,6 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 		return []format.DeviationWarning{}
 	}
 
-	// Fetch deviations for these transport modes
 	modeSet := make(map[string]bool)
 	for _, d := range deps {
 		if d.TransportMode != "" {
@@ -273,10 +324,9 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 		TransportModes: modes,
 	})
 	if err != nil {
-		return []format.DeviationWarning{} // Don't fail departures if deviations fail
+		return []format.DeviationWarning{}
 	}
 
-	// Filter to only deviations affecting our lines
 	results := []format.DeviationWarning{}
 	for _, dev := range devs {
 		if dev.Scope == nil {
@@ -295,7 +345,7 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 						break
 					}
 				}
-				break // One summary per deviation
+				break
 			}
 		}
 	}

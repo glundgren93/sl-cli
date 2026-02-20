@@ -53,11 +53,10 @@ sl departures --address "Stureplan" --mode METRO
 sl departures --address "Magnus Ladulåsgatan 7" --line 55 --json
 ```
 
-When using `--address`, the CLI:
-1. Geocodes the address via SL's journey planner
-2. Finds nearby stops (within `--radius`, default 1km)
-3. Scans them to find the closest one serving the requested `--line` or `--mode`
-4. Fetches relevant service deviations and shows them inline
+When using `--address`:
+- **Without `--line`/`--mode`**: returns departures from ALL nearby stops (up to 5), so one call gives you buses, trains, metro — everything near you.
+- **With `--line` or `--mode`**: finds the nearest stop serving that specific line/mode.
+- Fetches relevant service deviations and shows them inline.
 
 ### Trip Planning
 
@@ -157,30 +156,43 @@ Empty results always return `[]` (never `null`), so `len()` works safely.
 
 ### Departures JSON
 
+With `--address` (no filter) — returns array of nearby stops:
+
+```json
+[
+  {
+    "stop": "Rosenlundsgatan ( M Ladulåsg)",
+    "site_id": 1363,
+    "distance_m": 119,
+    "departures": [
+      {
+        "line": "55",
+        "transport_mode": "BUS",
+        "destination": "Henriksdalsberget",
+        "minutes_left": 6
+      }
+    ],
+    "deviations": []
+  },
+  {
+    "stop": "Stockholms södra",
+    "site_id": 9530,
+    "distance_m": 171,
+    "departures": [...],
+    "deviations": [...]
+  }
+]
+```
+
+With `--line` or `--mode` — returns single stop object:
+
 ```json
 {
   "stop": "Rosenlundsgatan ( M Ladulåsg)",
   "site_id": 1363,
   "distance_m": 119,
-  "departures": [
-    {
-      "line": "55",
-      "transport_mode": "BUS",
-      "destination": "Henriksdalsberget",
-      "display": "6 min",
-      "minutes_left": 6,
-      "state": "EXPECTED",
-      "stop_area": "Rosenlundsgatan ( M Ladulåsg)",
-      "platform": "A"
-    }
-  ],
-  "deviations": [
-    {
-      "line": "55",
-      "header": "Reduced service",
-      "details": "..."
-    }
-  ]
+  "departures": [...],
+  "deviations": []
 }
 ```
 
@@ -220,6 +232,9 @@ Empty results always return `[]` (never `null`), so `len()` works safely.
 ### Example agent workflows
 
 ```bash
+# "What's departing near me?" (all stops, all modes, one call)
+sl departures --address "Magnus Ladulåsgatan 7" --json
+
 # "When is my bus coming?"
 sl departures --address "Magnus Ladulåsgatan 7" --line 55 --json
 
