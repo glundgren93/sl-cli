@@ -193,15 +193,10 @@ type departureResult struct {
 	SiteID     int                     `json:"site_id"`
 	DistanceM  int                     `json:"distance_m,omitempty"`
 	Departures []model.ParsedDeparture `json:"departures"`
-	Deviations []deviationSummary      `json:"deviations,omitempty"`
+	Deviations []format.DeviationWarning      `json:"deviations,omitempty"`
 }
 
-type deviationSummary struct {
-	Line    string `json:"line,omitempty"`
-	Header  string `json:"header"`
-	Details string `json:"details,omitempty"`
-	Scope   string `json:"scope,omitempty"`
-}
+
 
 func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int, stopName string, distanceM int) error {
 	resp, err := client.GetDepartures(ctx, api.DepartureOptions{
@@ -249,7 +244,7 @@ func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int
 }
 
 // fetchRelevantDeviations fetches deviations for lines present in the departures.
-func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []model.ParsedDeparture) []deviationSummary {
+func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []model.ParsedDeparture) []format.DeviationWarning {
 	// Collect unique line IDs
 	lineSet := make(map[string]bool)
 	for _, d := range deps {
@@ -282,7 +277,7 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 	}
 
 	// Filter to only deviations affecting our lines
-	var results []deviationSummary
+	var results []format.DeviationWarning
 	for _, dev := range devs {
 		if dev.Scope == nil {
 			continue
@@ -291,7 +286,7 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 			if lineSet[line.Designation] {
 				for _, msg := range dev.MessageVariants {
 					if msg.Language == "en" || (msg.Language == "sv" && len(dev.MessageVariants) == 1) {
-						results = append(results, deviationSummary{
+						results = append(results, format.DeviationWarning{
 							Line:    line.Designation,
 							Header:  msg.Header,
 							Details: truncate(msg.Details, 150),

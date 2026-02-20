@@ -122,46 +122,29 @@ func formatState(state string) string {
 }
 
 // DeviationWarning is a simplified deviation for inline display.
+// Shared between cmd and format packages to avoid JSON round-trip hacks.
 type DeviationWarning struct {
-	Line    string
-	Header  string
-	Details string
-	Scope   string
+	Line    string `json:"line,omitempty"`
+	Header  string `json:"header"`
+	Details string `json:"details,omitempty"`
+	Scope   string `json:"scope,omitempty"`
 }
 
 // DeviationWarnings prints inline deviation warnings below departures.
-func DeviationWarnings(warnings any) {
-	// Accept the deviationSummary type from departures command
-	type summary struct {
-		Line    string `json:"line,omitempty"`
-		Header  string `json:"header"`
-		Details string `json:"details,omitempty"`
-		Scope   string `json:"scope,omitempty"`
-	}
-
-	// Use JSON round-trip to convert from the cmd package type
-	data, err := json.Marshal(warnings)
-	if err != nil {
-		return
-	}
-	var summaries []summary
-	if err := json.Unmarshal(data, &summaries); err != nil {
+func DeviationWarnings(warnings []DeviationWarning) {
+	if len(warnings) == 0 {
 		return
 	}
 
-	if len(summaries) == 0 {
-		return
-	}
-
-	yellow.Printf("⚠️  %d disruption(s) affecting these lines:\n", len(summaries))
-	for _, s := range summaries {
+	yellow.Printf("⚠️  %d disruption(s) affecting these lines:\n", len(warnings))
+	for _, w := range warnings {
 		linePrefix := ""
-		if s.Line != "" {
-			linePrefix = fmt.Sprintf("[Line %s] ", s.Line)
+		if w.Line != "" {
+			linePrefix = fmt.Sprintf("[Line %s] ", w.Line)
 		}
-		yellow.Printf("  • %s%s\n", linePrefix, s.Header)
-		if s.Details != "" {
-			dim.Printf("    %s\n", s.Details)
+		yellow.Printf("  • %s%s\n", linePrefix, w.Header)
+		if w.Details != "" {
+			dim.Printf("    %s\n", w.Details)
 		}
 	}
 	fmt.Println()
