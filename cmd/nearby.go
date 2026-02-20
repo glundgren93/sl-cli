@@ -7,16 +7,18 @@ import (
 	"strings"
 
 	"github.com/glundgren93/sl-cli/internal/api"
+	"github.com/glundgren93/sl-cli/internal/model"
 	"github.com/glundgren93/sl-cli/internal/format"
 	"github.com/spf13/cobra"
 )
 
 var (
-	nearbyLat    float64
-	nearbyLon    float64
-	nearbyRadius float64
-	nearbyLimit  int
-	nearbyAddr   string
+	nearbyLat       float64
+	nearbyLon       float64
+	nearbyRadius    float64
+	nearbyLimit     int
+	nearbyAddr      string
+	nearbyShowLines bool
 )
 
 var nearbyCmd = &cobra.Command{
@@ -24,10 +26,13 @@ var nearbyCmd = &cobra.Command{
 	Short: "Find stops near a location",
 	Long: `Find nearby stops by coordinates or address.
 
+Use --lines to also show which transit lines serve each stop (slower, makes API calls per stop).
+
 Examples:
   sl nearby --lat 59.3121 --lon 18.0643         # By coordinates
   sl nearby --address "Magnus Ladulåsgatan"      # By address
   sl nearby --lat 59.3121 --lon 18.0643 -r 0.3  # 300m radius
+  sl nearby --address "Stureplan" --lines        # Show lines per stop
   sl nearby --lat 59.3121 --lon 18.0643 --json   # JSON output`,
 	Aliases: []string{"near", "n"},
 	RunE:    runNearby,
@@ -39,6 +44,7 @@ func init() {
 	nearbyCmd.Flags().Float64VarP(&nearbyRadius, "radius", "r", 0.5, "Search radius in km (default 0.5)")
 	nearbyCmd.Flags().IntVar(&nearbyLimit, "limit", 10, "Max results")
 	nearbyCmd.Flags().StringVar(&nearbyAddr, "address", "", "Address to geocode (uses SL stop-finder)")
+	nearbyCmd.Flags().BoolVar(&nearbyShowLines, "lines", false, "Show which lines serve each stop (slower)")
 
 	rootCmd.AddCommand(nearbyCmd)
 }
@@ -69,7 +75,6 @@ func runNearby(cmd *cobra.Command, args []string) error {
 		}
 
 		if lat == 0 && lon == 0 {
-			// Geocode via journey planner stop-finder
 			locations, err := client.FindAddress(ctx, addr)
 			if err != nil {
 				return fmt.Errorf("geocoding address: %w", err)
@@ -90,7 +95,6 @@ func runNearby(cmd *cobra.Command, args []string) error {
 
 	nearby := api.FindNearestSites(sites, lat, lon, nearbyRadius)
 
-	// Fill in distance in meters
 	for i := range nearby {
 		nearby[i].DistanceM = int(nearby[i].DistanceKm * 1000)
 	}
@@ -99,10 +103,76 @@ func runNearby(cmd *cobra.Command, args []string) error {
 		nearby = nearby[:nearbyLimit]
 	}
 
-	if jsonOutput {
-		return format.JSON(nearby)
+	if !nearbyShowLines {
+		if jsonOutput {
+			return format.JSON(nearby)
+		}
+		format.NearbyStops(nearby)
+		return nil
 	}
 
-	format.NearbyStops(nearby)
+	// Enrich with line info
+	var results []format.NearbyStopWithLines
+	for _, s := range nearby {
+		entry := format.NearbyStopWithLines{
+			Stop:      s.Site.Name,
+			SiteID:    s.Site.ID,
+			DistanceM: s.DistanceM,
+		}
+
+		resp, err := client.GetDepartures(ctx, api.DepartureOptions{SiteID: s.Site.ID})
+		if err != nil {
+			results = append(results, entry)
+			continue
+		}
+
+		parsed := api.ParseDepartures(resp.Departures)
+		entry.Lines = extractLines(parsed)
+		results = append(results, entry)
+	}
+
+	if jsonOutput {
+		return format.JSON(results)
+	}
+
+	format.NearbyStopsWithLines(results)
 	return nil
+}
+
+// extractLines groups parsed departures into unique lines with destinations.
+func extractLines(parsed []model.ParsedDeparture) []format.StopInfoLine {
+	type lineKey struct {
+		designation   string
+		transportMode string
+		groupOfLines  string
+	}
+	lineMap := make(map[lineKey]map[string]bool)
+	var lineOrder []lineKey
+
+	for _, d := range parsed {
+		key := lineKey{d.Line, d.TransportMode, d.GroupOfLines}
+		if _, exists := lineMap[key]; !exists {
+			lineMap[key] = make(map[string]bool)
+			lineOrder = append(lineOrder, key)
+		}
+		if d.Destination != "" {
+			lineMap[key][d.Destination] = true
+		}
+	}
+
+	var lines []format.StopInfoLine
+	for _, key := range lineOrder {
+		dests := lineMap[key]
+		var destList []string
+		for d := range dests {
+			destList = append(destList, d)
+		}
+		lines = append(lines, format.StopInfoLine{
+			Designation:   key.designation,
+			TransportMode: key.transportMode,
+			GroupOfLines:  key.groupOfLines,
+			Destinations:  destList,
+		})
+	}
+	return lines
 }

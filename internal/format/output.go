@@ -376,3 +376,43 @@ func StopInfo(stopName string, siteID int, lines []StopInfoLine) {
 	}
 	fmt.Println()
 }
+
+// NearbyStopWithLines is a nearby stop enriched with line information.
+type NearbyStopWithLines struct {
+	Stop      string        `json:"stop"`
+	SiteID    int           `json:"site_id"`
+	DistanceM int           `json:"distance_m"`
+	Lines     []StopInfoLine `json:"lines"`
+}
+
+// NearbyStopsWithLines prints nearby stops with their serving lines.
+func NearbyStopsWithLines(stops []NearbyStopWithLines) {
+	if len(stops) == 0 {
+		dim.Println("No stops found nearby.")
+		return
+	}
+
+	bold.Println("📍 Nearby stops")
+	fmt.Println(strings.Repeat("─", 60))
+
+	for i, s := range stops {
+		bold.Printf("\n  %d. %s", i+1, s.Stop)
+		cyan.Printf("  %dm", s.DistanceM)
+		dim.Printf("  (id:%d)\n", s.SiteID)
+
+		if len(s.Lines) == 0 {
+			dim.Println("     No departures right now")
+			continue
+		}
+
+		for _, l := range s.Lines {
+			icon := ModeIcon(l.TransportMode)
+			fmt.Printf("     %s %-6s", icon, l.Designation)
+			if len(l.Destinations) > 0 {
+				dim.Printf(" → %s", strings.Join(l.Destinations, ", "))
+			}
+			fmt.Println()
+		}
+	}
+	fmt.Println()
+}
