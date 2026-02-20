@@ -8,6 +8,7 @@ import (
 
 	"github.com/glundgren93/sl-cli/internal/api"
 	"github.com/glundgren93/sl-cli/internal/format"
+	"github.com/glundgren93/sl-cli/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +49,13 @@ func init() {
 	rootCmd.AddCommand(tripCmd)
 }
 
+// tripResult wraps journey results with metadata for JSON output.
+type tripResult struct {
+	From     string              `json:"from"`
+	To       string              `json:"to"`
+	Journeys []model.JourneyTrip `json:"journeys"`
+}
+
 func runTrip(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	client := api.NewClient()
@@ -85,7 +93,11 @@ func runTrip(cmd *cobra.Command, args []string) error {
 	}
 
 	if jsonOutput {
-		return format.JSON(resp.Journeys)
+		return format.JSON(tripResult{
+			From:     originName,
+			To:       destName,
+			Journeys: resp.Journeys,
+		})
 	}
 
 	format.Trips(resp.Journeys)
