@@ -32,12 +32,14 @@ var departuresCmd = &cobra.Command{
 When using --address, the CLI geocodes the address, finds nearby stops,
 and returns departures from the closest stop(s) that serve the requested line/mode.
 
+Also fetches relevant service deviations and shows them inline.
+
 Examples:
   sl departures --site 9530                                  # By site ID
   sl departures --stop "Medborgarplatsen"                    # By stop name
   sl departures --address "Magnus Ladulåsgatan 7" --line 55  # By address + line
-  sl departures --address "Magnus Ladulåsgatan 7" --mode TRAIN  # Nearest train
-  sl departures --address "Magnus Ladulåsgatan 7"            # All nearby departures
+  sl departures --address "Drottninggatan 45" --mode TRAIN   # Nearest train
+  sl departures --address "Stureplan" --mode METRO           # Nearest metro
   sl departures --site 9530 --json                           # JSON for agents`,
 	Aliases: []string{"dep", "d"},
 	RunE:    runDepartures,
@@ -60,7 +62,6 @@ func runDepartures(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	client := api.NewClient()
 
-	// Address mode: geocode → find nearby → get departures from matching stops
 	if depAddress != "" {
 		return runDeparturesByAddress(ctx, client)
 	}
@@ -87,11 +88,10 @@ func runDepartures(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return fetchAndPrintDepartures(ctx, client, siteID, "")
+	return fetchAndPrintDepartures(ctx, client, siteID, "", 0)
 }
 
 func runDeparturesByAddress(ctx context.Context, client *api.Client) error {
-	// Step 1: Geocode
 	lat, lon, resolvedName, err := geocodeAddress(ctx, client, depAddress)
 	if err != nil {
 		return fmt.Errorf("geocoding address: %w", err)
@@ -101,8 +101,7 @@ func runDeparturesByAddress(ctx context.Context, client *api.Client) error {
 		fmt.Fprintf(os.Stderr, "📍 Resolved: %s (%.4f, %.4f)\n", resolvedName, lat, lon)
 	}
 
-	// Step 2: Find nearby stops
-	sites, err := client.GetSites(ctx)
+	sites, err := client.GetSitesCached(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching sites: %w", err)
 	}
@@ -112,17 +111,15 @@ func runDeparturesByAddress(ctx context.Context, client *api.Client) error {
 		return fmt.Errorf("no stops found within %.0fm of %q", depRadius*1000, depAddress)
 	}
 
-	// Step 3: If a line or mode filter is set, scan stops to find the nearest one with results
 	if depLine != "" || depMode != "" {
 		return departuresFromNearestMatching(ctx, client, nearby)
 	}
 
-	// No filters: just use the closest stop
 	closest := nearby[0]
 	if !jsonOutput {
 		fmt.Fprintf(os.Stderr, "🚏 Nearest stop: %s (%dm)\n\n", closest.Site.Name, int(closest.DistanceKm*1000))
 	}
-	return fetchAndPrintDepartures(ctx, client, closest.Site.ID, closest.Site.Name)
+	return fetchAndPrintDepartures(ctx, client, closest.Site.ID, closest.Site.Name, int(closest.DistanceKm*1000))
 }
 
 func departuresFromNearestMatching(ctx context.Context, client *api.Client, nearby []api.SiteWithDistance) error {
@@ -160,41 +157,53 @@ func departuresFromNearestMatching(ctx context.Context, client *api.Client, near
 			continue
 		}
 
-		// Found a stop with matching departures
 		if !jsonOutput {
 			fmt.Fprintf(os.Stderr, "🚏 %s — %dm away (%s found)\n\n",
 				stop.Site.Name, int(stop.DistanceKm*1000), filterDesc)
 		}
+
+		// Fetch deviations for the lines we found
+		deviations := fetchRelevantDeviations(ctx, client, parsed)
 
 		if depLimit > 0 && len(parsed) > depLimit {
 			parsed = parsed[:depLimit]
 		}
 
 		if jsonOutput {
-			type addressResult struct {
-				Address    string                  `json:"address"`
-				Stop       string                  `json:"stop"`
-				SiteID     int                     `json:"site_id"`
-				DistanceM  int                     `json:"distance_m"`
-				Departures []model.ParsedDeparture `json:"departures"`
-			}
-			return format.JSON(addressResult{
-				Address:    depAddress,
+			return format.JSON(departureResult{
 				Stop:       stop.Site.Name,
 				SiteID:     stop.Site.ID,
 				DistanceM:  int(stop.DistanceKm * 1000),
 				Departures: parsed,
+				Deviations: deviations,
 			})
 		}
 
 		format.Departures(parsed, stop.Site.Name)
+		format.DeviationWarnings(deviations)
 		return nil
 	}
 
 	return fmt.Errorf("%s not found at any stop within %.0fm of %q", filterDesc, depRadius*1000, depAddress)
 }
 
-func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int, stopName string) error {
+// departureResult is the consistent JSON output for all departures queries.
+type departureResult struct {
+	Stop       string                  `json:"stop"`
+	SiteID     int                     `json:"site_id"`
+	DistanceM  int                     `json:"distance_m,omitempty"`
+	Departures []model.ParsedDeparture `json:"departures"`
+	Deviations []deviationSummary      `json:"deviations,omitempty"`
+}
+
+type deviationSummary struct {
+	Line    string `json:"line,omitempty"`
+	Header  string `json:"header"`
+	Details string `json:"details,omitempty"`
+	Scope   string `json:"scope,omitempty"`
+}
+
+func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int, stopName string, distanceM int) error {
 	resp, err := client.GetDepartures(ctx, api.DepartureOptions{
 		SiteID:        siteID,
 		TransportMode: depMode,
@@ -209,12 +218,12 @@ func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int
 	if depMode != "" {
 		parsed = api.FilterByTransportMode(parsed, depMode)
 	}
+
+	// Fetch deviations for the lines we found
+	deviations := fetchRelevantDeviations(ctx, client, parsed)
+
 	if depLimit > 0 && len(parsed) > depLimit {
 		parsed = parsed[:depLimit]
-	}
-
-	if jsonOutput {
-		return format.JSON(parsed)
 	}
 
 	if stopName == "" {
@@ -223,8 +232,87 @@ func fetchAndPrintDepartures(ctx context.Context, client *api.Client, siteID int
 	if len(parsed) > 0 {
 		stopName = parsed[0].StopArea
 	}
+
+	if jsonOutput {
+		return format.JSON(departureResult{
+			Stop:       stopName,
+			SiteID:     siteID,
+			DistanceM:  distanceM,
+			Departures: parsed,
+			Deviations: deviations,
+		})
+	}
+
 	format.Departures(parsed, stopName)
+	format.DeviationWarnings(deviations)
 	return nil
+}
+
+// fetchRelevantDeviations fetches deviations for lines present in the departures.
+func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []model.ParsedDeparture) []deviationSummary {
+	// Collect unique line IDs
+	lineSet := make(map[string]bool)
+	for _, d := range deps {
+		if d.Line != "" {
+			lineSet[d.Line] = true
+		}
+	}
+
+	if len(lineSet) == 0 {
+		return nil
+	}
+
+	// Fetch deviations for these transport modes
+	modeSet := make(map[string]bool)
+	for _, d := range deps {
+		if d.TransportMode != "" {
+			modeSet[d.TransportMode] = true
+		}
+	}
+	var modes []string
+	for m := range modeSet {
+		modes = append(modes, m)
+	}
+
+	devs, err := client.GetDeviations(ctx, api.DeviationOptions{
+		TransportModes: modes,
+	})
+	if err != nil {
+		return nil // Don't fail departures if deviations fail
+	}
+
+	// Filter to only deviations affecting our lines
+	var results []deviationSummary
+	for _, dev := range devs {
+		if dev.Scope == nil {
+			continue
+		}
+		for _, line := range dev.Scope.Lines {
+			if lineSet[line.Designation] {
+				for _, msg := range dev.MessageVariants {
+					if msg.Language == "en" || (msg.Language == "sv" && len(dev.MessageVariants) == 1) {
+						results = append(results, deviationSummary{
+							Line:    line.Designation,
+							Header:  msg.Header,
+							Details: truncate(msg.Details, 150),
+							Scope:   msg.ScopeAlias,
+						})
+						break
+					}
+				}
+				break // One summary per deviation
+			}
+		}
+	}
+
+	return results
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func geocodeAddress(ctx context.Context, client *api.Client, address string) (lat, lon float64, name string, err error) {
@@ -240,7 +328,7 @@ func geocodeAddress(ctx context.Context, client *api.Client, address string) (la
 }
 
 func resolveSiteID(ctx context.Context, client *api.Client, name string) (int, error) {
-	sites, err := client.GetSites(ctx)
+	sites, err := client.GetSitesCached(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("fetching sites: %w", err)
 	}

@@ -167,6 +167,7 @@ type JourneyLeg struct {
 }
 
 type JourneyStop struct {
+	ProductClasses         []int      `json:"productClasses,omitempty"`
 	ID                     string     `json:"id"`
 	Name                   string     `json:"name"`
 	DisassembledName       string     `json:"disassembledName"`
@@ -177,7 +178,7 @@ type JourneyStop struct {
 	ArrivalTimePlanned     string     `json:"arrivalTimePlanned,omitempty"`
 	ArrivalTimeEstimated   string     `json:"arrivalTimeEstimated,omitempty"`
 	Parent                 *Parent    `json:"parent,omitempty"`
-	Properties             map[string]string `json:"properties,omitempty"`
+	Properties             map[string]any `json:"properties,omitempty"`
 }
 
 type JourneyTransport struct {

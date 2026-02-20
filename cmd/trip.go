@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/glundgren/sl-cli/internal/api"
@@ -22,19 +23,20 @@ var (
 var tripCmd = &cobra.Command{
 	Use:   "trip",
 	Short: "Plan a journey between two locations",
-	Long: `Plan a trip from A to B using SL's journey planner.
+	Long: `Plan a trip from A to B. Accepts stop names, stop IDs, or street addresses.
 
 Examples:
   sl trip --from "Medborgarplatsen" --to "T-Centralen"
-  sl trip --from "Magnus Ladulåsgatan" --to "Kungsträdgården" --results 3
-  sl trip --from 9191 --to 1080 --json`,
+  sl trip --from "Magnus Ladulåsgatan 7" --to "Stureplan"
+  sl trip --from "Drottninggatan 45" --to "Arlanda" --results 5
+  sl trip --from "Medborgarplatsen" --to "T-Centralen" --json`,
 	Aliases: []string{"plan", "route"},
 	RunE:    runTrip,
 }
 
 func init() {
-	tripCmd.Flags().StringVar(&tripFrom, "from", "", "Origin (stop name, stop ID, or address)")
-	tripCmd.Flags().StringVar(&tripTo, "to", "", "Destination (stop name, stop ID, or address)")
+	tripCmd.Flags().StringVar(&tripFrom, "from", "", "Origin (stop name, address, or stop ID)")
+	tripCmd.Flags().StringVar(&tripTo, "to", "", "Destination (stop name, address, or stop ID)")
 	tripCmd.Flags().IntVar(&tripNumTrips, "results", 3, "Number of trip alternatives")
 	tripCmd.Flags().StringVar(&tripLang, "lang", "en", "Language (sv or en)")
 	tripCmd.Flags().IntVar(&tripMaxChanges, "max-changes", -1, "Max number of changes (-1 = unlimited)")
@@ -50,16 +52,18 @@ func runTrip(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	client := api.NewClient()
 
-	// Resolve origin
-	originID, err := resolveLocation(ctx, client, tripFrom)
+	originID, originName, err := resolveLocation(ctx, client, tripFrom)
 	if err != nil {
 		return fmt.Errorf("resolving origin: %w", err)
 	}
 
-	// Resolve destination
-	destID, err := resolveLocation(ctx, client, tripTo)
+	destID, destName, err := resolveLocation(ctx, client, tripTo)
 	if err != nil {
 		return fmt.Errorf("resolving destination: %w", err)
+	}
+
+	if !jsonOutput {
+		fmt.Fprintf(os.Stderr, "📍 %s → %s\n\n", originName, destName)
 	}
 
 	resp, err := client.PlanTrip(ctx, api.TripOptions{
@@ -74,7 +78,6 @@ func runTrip(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("planning trip: %w", err)
 	}
 
-	// Check for system errors
 	for _, msg := range resp.SystemMessages {
 		if msg.Type == "error" {
 			return fmt.Errorf("journey planner: %s", msg.Text)
@@ -89,20 +92,29 @@ func runTrip(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func resolveLocation(ctx context.Context, client *api.Client, input string) (string, error) {
-	// If it looks like a stop-finder ID (long numeric), use directly
+// resolveLocation resolves a user input (name, address, or ID) to a journey planner location ID.
+func resolveLocation(ctx context.Context, client *api.Client, input string) (id string, name string, err error) {
+	// If it looks like a stop-finder ID (long numeric starting with 9), use directly
 	if strings.HasPrefix(input, "9") && len(input) > 8 {
-		return input, nil
+		return input, input, nil
 	}
 
-	// Try stop-finder to resolve the name/address
-	locations, err := client.FindStops(ctx, input)
+	// Try broad search (stops + addresses + POI) so both "Medborgarplatsen" and
+	// "Magnus Ladulåsgatan 7" work
+	locations, err := client.FindAddress(ctx, input)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if len(locations) == 0 {
-		// Try with the broader filter (stops + addresses + POI)
-		return input, nil // Let the API try to resolve it
+
+	if len(locations) > 0 {
+		loc := locations[0]
+		displayName := loc.Name
+		if loc.DisassembledName != "" && loc.DisassembledName != loc.Name {
+			displayName = loc.DisassembledName
+		}
+		return loc.ID, displayName, nil
 	}
-	return locations[0].ID, nil
+
+	// Fallback: let the journey planner try to resolve it
+	return input, input, nil
 }

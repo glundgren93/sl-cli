@@ -83,7 +83,7 @@ func runNearby(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	sites, err := client.GetSites(ctx)
+	sites, err := client.GetSitesCached(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching sites: %w", err)
 	}
