@@ -80,35 +80,7 @@ func FilterByTransportMode(deps []model.ParsedDeparture, mode string) []model.Pa
 	return filtered
 }
 
-// FilterByLine filters departures by line designation.
-func FilterByLine(deps []model.ParsedDeparture, line string) []model.ParsedDeparture {
-	if line == "" {
-		return deps
-	}
-	var filtered []model.ParsedDeparture
-	for _, d := range deps {
-		if strings.EqualFold(d.Line, line) {
-			filtered = append(filtered, d)
-		}
-	}
-	return filtered
-}
 
-// FilterByDirection filters departures by direction name (substring match).
-func FilterByDirection(deps []model.ParsedDeparture, direction string) []model.ParsedDeparture {
-	if direction == "" {
-		return deps
-	}
-	direction = strings.ToLower(direction)
-	var filtered []model.ParsedDeparture
-	for _, d := range deps {
-		if strings.Contains(strings.ToLower(d.Destination), direction) ||
-			strings.Contains(strings.ToLower(d.Direction), direction) {
-			filtered = append(filtered, d)
-		}
-	}
-	return filtered
-}
 
 // DistanceKm calculates the Haversine distance between two coordinates in km.
 func DistanceKm(lat1, lon1, lat2, lon2 float64) float64 {
