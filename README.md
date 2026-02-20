@@ -8,7 +8,8 @@ A command-line interface for Stockholm's public transport (SL). Designed for bot
 
 - 🚌 **Real-time departures** from any stop — by ID, name, or street address
 - 🗺️ **Trip planning** between any two locations (stops or addresses)
-- 📍 **Nearby stops** by coordinates or address
+- 📍 **Nearby stops** by coordinates or address, with optional line info
+- ℹ️ **Stop info** — see which lines serve a stop
 - 🔍 **Stop search** by name
 - ⚠️ **Service deviations** — standalone or inline with departures
 - 🚇 **Line listings** across all transport modes
@@ -70,6 +71,26 @@ sl trip --from "Medborgarplatsen" --to "T-Centralen" --max-changes 0
 sl trip --from "Slussen" --to "Kista" --route-type leastwalking
 ```
 
+### Stop Info
+
+Show which transit lines serve a specific stop:
+
+```bash
+# By site ID
+sl stop-info --site 9530
+
+# By stop name
+sl stop-info --stop "Medborgarplatsen"
+
+# By street address (finds nearest stop)
+sl stop-info --address "Magnus Ladulåsgatan 7"
+
+# JSON output
+sl stop-info --address "Magnus Ladulåsgatan 7" --json
+```
+
+Uses real-time departure data, so results reflect currently operating lines.
+
 ### Nearby Stops
 
 Find stops near a location:
@@ -80,6 +101,9 @@ sl nearby --lat 59.3121 --lon 18.0643
 
 # By address
 sl nearby --address "Magnus Ladulåsgatan 7"
+
+# Show which lines serve each stop (makes API calls per stop, slower)
+sl nearby --address "Stureplan" --lines
 
 # Custom radius (km)
 sl nearby --lat 59.3121 --lon 18.0643 --radius 1.0 --json
@@ -123,8 +147,6 @@ All commands support `--json` for structured output. This makes `sl-cli` ideal f
 
 ### Departures JSON
 
-The departures command always returns a consistent schema:
-
 ```json
 {
   "stop": "Rosenlundsgatan ( M Ladulåsg)",
@@ -152,20 +174,59 @@ The departures command always returns a consistent schema:
 }
 ```
 
+### Trip JSON
+
+```json
+{
+  "from": "Magnus Ladulåsgatan 7",
+  "to": "Stureplan",
+  "journeys": [
+    {
+      "tripDuration": 960,
+      "interchanges": 1,
+      "legs": [...]
+    }
+  ]
+}
+```
+
+### Stop Info JSON
+
+```json
+{
+  "stop": "Rosenlundsgatan ( M Ladulåsg)",
+  "site_id": 1363,
+  "distance_m": 119,
+  "lines": [
+    {
+      "designation": "55",
+      "transport_mode": "BUS",
+      "destinations": ["Tanto", "Henriksdalsberget"]
+    }
+  ]
+}
+```
+
 ### Example agent workflows
 
 ```bash
-# Check if user's bus is coming
+# "When is my bus coming?"
 sl departures --address "Magnus Ladulåsgatan 7" --line 55 --json
 
-# Find nearest stops to user's location
-sl nearby --lat 59.3121 --lon 18.0643 --json
+# "What buses are near me?"
+sl nearby --lat 59.3121 --lon 18.0643 --lines --json
 
-# Plan a route from user's home to destination
+# "Which lines serve Medborgarplatsen?"
+sl stop-info --stop "Medborgarplatsen" --json
+
+# "How do I get to Arlanda from home?"
 sl trip --from "Magnus Ladulåsgatan 7" --to "Arlanda" --json
 
-# Check disruptions on user's commute lines
+# "Any disruptions on the 55?"
 sl deviations --line 55 --json
+
+# "Find nearest stop with metro"
+sl nearby --address "Drottninggatan 45" --lines --json
 ```
 
 ## Transport Modes
@@ -196,7 +257,7 @@ go test ./...
 go build -o sl .
 
 # Build with version info
-go build -ldflags "-X github.com/glundgren/sl-cli/cmd.Version=1.0.0 -X github.com/glundgren/sl-cli/cmd.Commit=$(git rev-parse --short HEAD)" -o sl .
+go build -ldflags "-X github.com/glundgren93/sl-cli/cmd.Version=1.0.0 -X github.com/glundgren93/sl-cli/cmd.Commit=$(git rev-parse --short HEAD)" -o sl .
 ```
 
 ## License
