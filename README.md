@@ -145,6 +145,16 @@ sl lines --mode METRO --json     # Metro lines as JSON
 
 All commands support `--json` for structured output. This makes `sl-cli` ideal for AI agents and automation.
 
+### Error Handling
+
+When `--json` is set, errors are output as JSON on stderr:
+
+```json
+{"error": "55 not found at any stop within 1000m of \"Stureplan\""}
+```
+
+Empty results always return `[]` (never `null`), so `len()` works safely.
+
 ### Departures JSON
 
 ```json
