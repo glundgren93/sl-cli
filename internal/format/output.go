@@ -329,3 +329,50 @@ func Lines(lines []model.Line) {
 	}
 	fmt.Println()
 }
+
+// StopInfoLine is the data for a single line serving a stop (used by StopInfo formatter).
+type StopInfoLine struct {
+	Designation   string   `json:"designation"`
+	TransportMode string   `json:"transport_mode"`
+	GroupOfLines  string   `json:"group_of_lines,omitempty"`
+	Destinations  []string `json:"destinations"`
+}
+
+// StopInfo prints a summary of lines serving a stop.
+func StopInfo(stopName string, siteID int, lines []StopInfoLine) {
+	if len(lines) == 0 {
+		dim.Printf("No lines currently serving %s.\n", stopName)
+		dim.Println("(This uses real-time departures — try again during operating hours)")
+		return
+	}
+
+	bold.Printf("📍 %s", stopName)
+	dim.Printf(" (id:%d)\n", siteID)
+	fmt.Println(strings.Repeat("─", 60))
+
+	// Group by transport mode
+	groups := make(map[string][]StopInfoLine)
+	var modes []string
+	for _, l := range lines {
+		if _, exists := groups[l.TransportMode]; !exists {
+			modes = append(modes, l.TransportMode)
+		}
+		groups[l.TransportMode] = append(groups[l.TransportMode], l)
+	}
+
+	for _, mode := range modes {
+		icon := ModeIcon(mode)
+		bold.Printf("\n%s %s\n", icon, mode)
+		for _, l := range groups[mode] {
+			fmt.Printf("  Line %-6s", l.Designation)
+			if l.GroupOfLines != "" {
+				dim.Printf(" (%s)", l.GroupOfLines)
+			}
+			if len(l.Destinations) > 0 {
+				dim.Printf("  → %s", strings.Join(l.Destinations, ", "))
+			}
+			fmt.Println()
+		}
+	}
+	fmt.Println()
+}
