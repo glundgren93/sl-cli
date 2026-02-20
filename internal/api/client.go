@@ -292,3 +292,22 @@ func (c *Client) PlanTrip(ctx context.Context, opts TripOptions) (*model.Journey
 	}
 	return &resp, nil
 }
+
+// FindAddress searches for addresses/streets/POIs (broader than FindStops).
+func (c *Client) FindAddress(ctx context.Context, query string) ([]model.Location, error) {
+	params := url.Values{}
+	params.Set("name_sf", query)
+	params.Set("type_sf", "any")
+	params.Set("any_obj_filter_sf", "46") // stops + addresses + POI
+
+	u := JourneyPlannerBaseURL + "/stop-finder?" + params.Encode()
+	body, err := c.get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	var resp model.StopFinderResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parsing stop finder: %w", err)
+	}
+	return resp.Locations, nil
+}
