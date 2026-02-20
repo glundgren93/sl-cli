@@ -97,21 +97,30 @@ func (c *Client) GetSites(ctx context.Context) ([]model.Site, error) {
 	return sites, nil
 }
 
-// GetLines returns all lines, optionally filtered by transport authority.
-func (c *Client) GetLines(ctx context.Context, transportAuthorityID int) ([]model.Line, error) {
-	u := TransportBaseURL + "/lines"
-	if transportAuthorityID > 0 {
-		u += fmt.Sprintf("?transport_authority_id=%d", transportAuthorityID)
-	}
-	body, err := c.get(ctx, u)
+// GetLines returns all lines for SL (transport_authority_id=1).
+// The API returns a dict grouped by transport mode, so we flatten it.
+func (c *Client) GetLines(ctx context.Context) ([]model.Line, error) {
+	body, err := c.get(ctx, TransportBaseURL+"/lines?transport_authority_id=1")
 	if err != nil {
 		return nil, err
 	}
-	var lines []model.Line
-	if err := json.Unmarshal(body, &lines); err != nil {
-		return nil, fmt.Errorf("parsing lines: %w", err)
+
+	// API returns {"metro": [...], "bus": [...], ...}
+	var grouped map[string]json.RawMessage
+	if err := json.Unmarshal(body, &grouped); err != nil {
+		return nil, fmt.Errorf("parsing lines response: %w", err)
 	}
-	return lines, nil
+
+	var allLines []model.Line
+	for _, raw := range grouped {
+		var lines []model.Line
+		if err := json.Unmarshal(raw, &lines); err != nil {
+			continue // skip modes that don't parse (e.g. taxi)
+		}
+		allLines = append(allLines, lines...)
+	}
+
+	return allLines, nil
 }
 
 // DepartureOptions configures a departures request.
@@ -226,43 +235,52 @@ func (c *Client) FindStops(ctx context.Context, query string) ([]model.Location,
 	return resp.Locations, nil
 }
 
+// FindAddress searches for addresses/streets/POIs (broader than FindStops).
+func (c *Client) FindAddress(ctx context.Context, query string) ([]model.Location, error) {
+	params := url.Values{}
+	params.Set("name_sf", query)
+	params.Set("type_sf", "any")
+	params.Set("any_obj_filter_sf", "46") // stops + addresses + POI
+
+	u := JourneyPlannerBaseURL + "/stop-finder?" + params.Encode()
+	body, err := c.get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	var resp model.StopFinderResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parsing stop finder: %w", err)
+	}
+	return resp.Locations, nil
+}
+
 // TripOptions configures a trip planning request.
 type TripOptions struct {
-	OriginID      string
-	OriginName    string
-	OriginCoord   [2]float64 // [lat, lon]
-	DestID        string
-	DestName      string
-	DestCoord     [2]float64
-	NumTrips      int
-	Language      string // "sv" or "en"
-	MaxChanges    int    // -1 = unset
-	RouteType     string // "leasttime", "leastinterchange", "leastwalking"
+	OriginID   string
+	OriginName string
+	DestID     string
+	DestName   string
+	NumTrips   int
+	Language   string // "sv" or "en"
+	MaxChanges int    // -1 = unset
+	RouteType  string // "leasttime", "leastinterchange", "leastwalking"
 }
 
 // PlanTrip plans a journey between two locations.
 func (c *Client) PlanTrip(ctx context.Context, opts TripOptions) (*model.JourneyResponse, error) {
 	params := url.Values{}
 
-	// Origin
 	if opts.OriginID != "" {
 		params.Set("type_origin", "any")
 		params.Set("name_origin", opts.OriginID)
-	} else if opts.OriginCoord[0] != 0 {
-		params.Set("type_origin", "coord")
-		params.Set("name_origin", fmt.Sprintf("%f:%f:WGS84", opts.OriginCoord[0], opts.OriginCoord[1]))
 	} else if opts.OriginName != "" {
 		params.Set("type_origin", "any")
 		params.Set("name_origin", opts.OriginName)
 	}
 
-	// Destination
 	if opts.DestID != "" {
 		params.Set("type_destination", "any")
 		params.Set("name_destination", opts.DestID)
-	} else if opts.DestCoord[0] != 0 {
-		params.Set("type_destination", "coord")
-		params.Set("name_destination", fmt.Sprintf("%f:%f:WGS84", opts.DestCoord[0], opts.DestCoord[1]))
 	} else if opts.DestName != "" {
 		params.Set("type_destination", "any")
 		params.Set("name_destination", opts.DestName)
@@ -291,23 +309,4 @@ func (c *Client) PlanTrip(ctx context.Context, opts TripOptions) (*model.Journey
 		return nil, fmt.Errorf("parsing trips: %w", err)
 	}
 	return &resp, nil
-}
-
-// FindAddress searches for addresses/streets/POIs (broader than FindStops).
-func (c *Client) FindAddress(ctx context.Context, query string) ([]model.Location, error) {
-	params := url.Values{}
-	params.Set("name_sf", query)
-	params.Set("type_sf", "any")
-	params.Set("any_obj_filter_sf", "46") // stops + addresses + POI
-
-	u := JourneyPlannerBaseURL + "/stop-finder?" + params.Encode()
-	body, err := c.get(ctx, u)
-	if err != nil {
-		return nil, err
-	}
-	var resp model.StopFinderResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("parsing stop finder: %w", err)
-	}
-	return resp.Locations, nil
 }

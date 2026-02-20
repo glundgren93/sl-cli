@@ -35,7 +35,7 @@ func runLines(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	client := api.NewClient()
 
-	lines, err := client.GetLines(ctx, 0)
+	lines, err := client.GetLines(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching lines: %w", err)
 	}
