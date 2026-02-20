@@ -2,6 +2,7 @@ package api
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -131,13 +132,9 @@ func FindNearestSites(sites []model.Site, lat, lon, radiusKm float64) []SiteWith
 		}
 	}
 	// Sort by distance
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].DistanceKm < results[i].DistanceKm {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].DistanceKm < results[j].DistanceKm
+	})
 	return results
 }
 
