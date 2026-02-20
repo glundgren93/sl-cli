@@ -70,7 +70,7 @@ func runNearby(cmd *cobra.Command, args []string) error {
 
 		if lat == 0 && lon == 0 {
 			// Geocode via journey planner stop-finder
-			locations, err := client.FindStops(ctx, addr)
+			locations, err := client.FindAddress(ctx, addr)
 			if err != nil {
 				return fmt.Errorf("geocoding address: %w", err)
 			}
