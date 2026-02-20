@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/glundgren/sl-cli/internal/api"
-	"github.com/glundgren/sl-cli/internal/model"
+	"github.com/glundgren93/sl-cli/internal/api"
+	"github.com/glundgren93/sl-cli/internal/model"
 )
 
 var (

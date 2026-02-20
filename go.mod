@@ -1,4 +1,4 @@
-module github.com/glundgren/sl-cli
+module github.com/glundgren93/sl-cli
 
 go 1.25.0
 

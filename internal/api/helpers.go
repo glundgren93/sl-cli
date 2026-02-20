@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/glundgren/sl-cli/internal/model"
+	"github.com/glundgren93/sl-cli/internal/model"
 )
 
 const stockholmTZ = "Europe/Stockholm"

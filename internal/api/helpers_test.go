@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glundgren/sl-cli/internal/model"
+	"github.com/glundgren93/sl-cli/internal/model"
 )
 
 func TestDistanceKm(t *testing.T) {

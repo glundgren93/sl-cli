@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/glundgren/sl-cli/internal/api"
-	"github.com/glundgren/sl-cli/internal/format"
+	"github.com/glundgren93/sl-cli/internal/api"
+	"github.com/glundgren93/sl-cli/internal/format"
 	"github.com/spf13/cobra"
 )
 

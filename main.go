@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/glundgren/sl-cli/cmd"
+	"github.com/glundgren93/sl-cli/cmd"
 )
 
 func main() {
