@@ -100,7 +100,7 @@ func filterDeviationsByLine(devs []model.Deviation, designations []string) []mod
 		designSet[strings.ToLower(d)] = true
 	}
 
-	var filtered []model.Deviation
+	filtered := []model.Deviation{}
 	for _, dev := range devs {
 		if dev.Scope == nil {
 			continue

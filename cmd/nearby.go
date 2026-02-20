@@ -112,7 +112,7 @@ func runNearby(cmd *cobra.Command, args []string) error {
 	}
 
 	// Enrich with line info
-	var results []format.NearbyStopWithLines
+	results := []format.NearbyStopWithLines{}
 	for _, s := range nearby {
 		entry := format.NearbyStopWithLines{
 			Stop:      s.Site.Name,
@@ -160,7 +160,7 @@ func extractLines(parsed []model.ParsedDeparture) []format.StopInfoLine {
 		}
 	}
 
-	var lines []format.StopInfoLine
+	lines := []format.StopInfoLine{}
 	for _, key := range lineOrder {
 		dests := lineMap[key]
 		var destList []string

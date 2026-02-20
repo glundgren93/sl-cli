@@ -136,7 +136,7 @@ func runStopInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build result
-	var lines []format.StopInfoLine
+	lines := []format.StopInfoLine{}
 	for _, key := range lineOrder {
 		dests := lineMap[key]
 		var destList []string

@@ -50,7 +50,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	queryLower := strings.ToLower(query)
 	seen := make(map[int]bool)
-	var results []siteResult
+	results := []siteResult{}
 
 	for _, s := range sites {
 		if seen[s.ID] {

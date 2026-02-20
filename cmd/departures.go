@@ -191,9 +191,9 @@ func departuresFromNearestMatching(ctx context.Context, client *api.Client, near
 type departureResult struct {
 	Stop       string                  `json:"stop"`
 	SiteID     int                     `json:"site_id"`
-	DistanceM  int                     `json:"distance_m,omitempty"`
+	DistanceM  int                     `json:"distance_m"`
 	Departures []model.ParsedDeparture `json:"departures"`
-	Deviations []format.DeviationWarning      `json:"deviations,omitempty"`
+	Deviations []format.DeviationWarning      `json:"deviations"`
 }
 
 
@@ -254,7 +254,7 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 	}
 
 	if len(lineSet) == 0 {
-		return nil
+		return []format.DeviationWarning{}
 	}
 
 	// Fetch deviations for these transport modes
@@ -273,11 +273,11 @@ func fetchRelevantDeviations(ctx context.Context, client *api.Client, deps []mod
 		TransportModes: modes,
 	})
 	if err != nil {
-		return nil // Don't fail departures if deviations fail
+		return []format.DeviationWarning{} // Don't fail departures if deviations fail
 	}
 
 	// Filter to only deviations affecting our lines
-	var results []format.DeviationWarning
+	results := []format.DeviationWarning{}
 	for _, dev := range devs {
 		if dev.Scope == nil {
 			continue
