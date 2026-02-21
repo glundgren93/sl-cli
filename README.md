@@ -1,288 +1,171 @@
 # sl-cli
 
-A command-line interface for Stockholm's public transport (SL). Designed for both humans and AI agents.
+A command-line interface for Stockholm's public transport (SL).
 
-**No API key required.** Data sourced from [SL via Trafiklab](https://www.trafiklab.se/api/our-apis/sl/).
+**No API key required.** Uses [SL's open APIs](https://www.trafiklab.se/api/our-apis/sl/).
 
-## Features
+> **🤖 AI Agent?** Read [`SKILL.md`](SKILL.md) — it has everything you need in one file.
 
-- 🚌 **Real-time departures** from any stop — by ID, name, or street address
-- 🗺️ **Trip planning** between any two locations (stops or addresses)
-- 📍 **Nearby stops** by coordinates or address, with optional line info
-- ℹ️ **Stop info** — see which lines serve a stop
-- 🔍 **Stop search** by name
-- ⚠️ **Service deviations** — standalone or inline with departures
-- 🚇 **Line listings** across all transport modes
-- 🤖 **JSON output** for agent/machine consumption (`--json`)
-
-## Installation
+## Install
 
 ```bash
 # From source (requires Go 1.21+)
 go install github.com/glundgren93/sl-cli@latest
 
-# Or build locally
+# Or clone and build
 git clone https://github.com/glundgren93/sl-cli.git
-cd sl-cli
-go build -o sl .
+cd sl-cli && go build -o sl .
 ```
 
-## Usage
-
-### Departures
-
-Get real-time departures from a stop. Supports site ID, stop name, or street address:
+## Quick start
 
 ```bash
-# By site ID
-sl departures --site 9530
+# Departures near an address (all modes, all stops)
+sl departures --address "Drottninggatan 45"
 
-# By stop name (fuzzy search)
-sl departures --stop "Medborgarplatsen"
-
-# By street address — finds nearest stop serving the requested line
+# Next bus 55 from a specific address
 sl departures --address "Magnus Ladulåsgatan 7" --line 55
 
-# By address — nearest train station
-sl departures --address "Drottninggatan 45" --mode TRAIN
+# Trip from A to B
+sl trip --from "Slussen" --to "Arlanda"
 
-# By address — nearest metro station
-sl departures --address "Stureplan" --mode METRO
+# Nearby stops
+sl nearby --address "Stureplan"
 
-# JSON output (for agents)
-sl departures --address "Magnus Ladulåsgatan 7" --line 55 --json
+# What lines serve a stop?
+sl stop-info --stop "Medborgarplatsen"
+
+# Search for a stop
+sl search "Medborg"
+
+# Service disruptions
+sl deviations --mode METRO
+
+# List lines
+sl lines --mode BUS
 ```
 
-When using `--address`:
-- **Without `--line`/`--mode`**: returns departures from ALL nearby stops (up to 5), so one call gives you buses, trains, metro — everything near you.
-- **With `--line` or `--mode`**: finds the nearest stop serving that specific line/mode.
-- Fetches relevant service deviations and shows them inline.
+## Stop addressing
 
-### Trip Planning
+Three ways to identify a stop — pick whichever fits:
 
-Plan a journey from A to B. Accepts stop names, stop IDs, or street addresses:
+| Flag | Input | Speed |
+|------|-------|-------|
+| `--site <id>` | Exact site ID (e.g. `9530`) | Fastest |
+| `--stop "<name>"` | Fuzzy name search | Fast |
+| `--address "<street>"` | Street address, geocoded | Slower (geocoding call) |
+
+`--address` is the most flexible — it accepts any street, landmark, or place name.
+
+## Commands
+
+### `sl departures`
+
+Real-time departures from a stop.
 
 ```bash
-sl trip --from "Medborgarplatsen" --to "T-Centralen"
-sl trip --from "Magnus Ladulåsgatan 7" --to "Stureplan"
-sl trip --from "Drottninggatan 45" --to "Arlanda" --results 5
-sl trip --from "Medborgarplatsen" --to "T-Centralen" --max-changes 0
+sl departures --site 9530
+sl departures --stop "T-Centralen"
+sl departures --address "Stureplan" --mode METRO
+sl departures --address "Magnus Ladulåsgatan 7" --line 55
+```
+
+With `--address` and no filter: returns departures from ALL nearby stops (up to 5) — buses, trains, metro in one call.
+
+With `--line` or `--mode`: finds the nearest stop serving that specific line/mode. Deviations shown inline.
+
+### `sl trip`
+
+Journey planning between two locations.
+
+```bash
+sl trip --from "Slussen" --to "T-Centralen"
+sl trip --from "Magnus Ladulåsgatan 7" --to "Arlanda" --results 5
+sl trip --from "Slussen" --to "Kista" --max-changes 0
 sl trip --from "Slussen" --to "Kista" --route-type leastwalking
 ```
 
-### Stop Info
+| Flag | Description |
+|------|-------------|
+| `--results <n>` | Number of journey alternatives (default 5) |
+| `--max-changes <n>` | Max interchanges (0 = direct only) |
+| `--route-type` | `leastwalking` or `leastchanges` |
 
-Show which transit lines serve a specific stop:
+### `sl nearby`
+
+Find stops near a location.
 
 ```bash
-# By site ID
-sl stop-info --site 9530
+sl nearby --address "Stureplan"
+sl nearby --lat 59.3121 --lon 18.0643 --radius 1.0
+sl nearby --address "Stureplan" --lines    # also shows which lines serve each stop (slower)
+```
 
-# By stop name
+### `sl stop-info`
+
+Lines serving a stop (based on real-time departures).
+
+```bash
 sl stop-info --stop "Medborgarplatsen"
-
-# By street address (finds nearest stop)
 sl stop-info --address "Magnus Ladulåsgatan 7"
-
-# JSON output
-sl stop-info --address "Magnus Ladulåsgatan 7" --json
 ```
 
-Uses real-time departure data, so results reflect currently operating lines.
+### `sl search`
 
-### Nearby Stops
-
-Find stops near a location:
+Search stops by name.
 
 ```bash
-# By coordinates
-sl nearby --lat 59.3121 --lon 18.0643
-
-# By address
-sl nearby --address "Magnus Ladulåsgatan 7"
-
-# Show which lines serve each stop (makes API calls per stop, slower)
-sl nearby --address "Stureplan" --lines
-
-# Custom radius (km)
-sl nearby --lat 59.3121 --lon 18.0643 --radius 1.0 --json
-```
-
-### Search
-
-Search for stops by name:
-
-```bash
-sl search Medborgarplatsen
 sl search "Stockholm City"
-sl search Slussen --json
 ```
 
-### Deviations
+### `sl deviations`
 
-Check service disruptions:
+Current service disruptions.
 
 ```bash
-sl deviations                    # All deviations
-sl deviations --mode METRO       # Metro only
-sl deviations --line 55          # Line 55 only
-sl deviations --future           # Include planned
-sl deviations --json             # JSON output
+sl deviations                   # all
+sl deviations --mode METRO      # metro only
+sl deviations --line 55         # line 55 only
+sl deviations --future          # include planned disruptions
 ```
 
-### Lines
+### `sl lines`
 
-List transit lines:
+List transit lines.
 
 ```bash
-sl lines                         # All lines
-sl lines --mode BUS              # Buses only
-sl lines --mode METRO --json     # Metro lines as JSON
+sl lines                        # all lines
+sl lines --mode TRAM            # trams only
 ```
 
-## Agent Integration
+## JSON output
 
-All commands support `--json` for structured output. This makes `sl-cli` ideal for AI agents and automation.
-
-### Error Handling
-
-When `--json` is set, errors are output as JSON on stderr:
-
-```json
-{"error": "55 not found at any stop within 1000m of \"Stureplan\""}
-```
-
-Empty results always return `[]` (never `null`), so `len()` works safely.
-
-### Departures JSON
-
-With `--address` (no filter) — returns array of nearby stops:
-
-```json
-[
-  {
-    "stop": "Rosenlundsgatan ( M Ladulåsg)",
-    "site_id": 1363,
-    "distance_m": 119,
-    "departures": [
-      {
-        "line": "55",
-        "transport_mode": "BUS",
-        "destination": "Henriksdalsberget",
-        "minutes_left": 6
-      }
-    ],
-    "deviations": []
-  },
-  {
-    "stop": "Stockholms södra",
-    "site_id": 9530,
-    "distance_m": 171,
-    "departures": [...],
-    "deviations": [...]
-  }
-]
-```
-
-With `--line` or `--mode` — returns single stop object:
-
-```json
-{
-  "stop": "Rosenlundsgatan ( M Ladulåsg)",
-  "site_id": 1363,
-  "distance_m": 119,
-  "departures": [...],
-  "deviations": []
-}
-```
-
-### Trip JSON
-
-```json
-{
-  "from": "Magnus Ladulåsgatan 7",
-  "to": "Stureplan",
-  "journeys": [
-    {
-      "tripDuration": 960,
-      "interchanges": 1,
-      "legs": [...]
-    }
-  ]
-}
-```
-
-### Stop Info JSON
-
-```json
-{
-  "stop": "Rosenlundsgatan ( M Ladulåsg)",
-  "site_id": 1363,
-  "distance_m": 119,
-  "lines": [
-    {
-      "designation": "55",
-      "transport_mode": "BUS",
-      "destinations": ["Tanto", "Henriksdalsberget"]
-    }
-  ]
-}
-```
-
-### Example agent workflows
+All commands support `--json` for structured, machine-readable output.
 
 ```bash
-# "What's departing near me?" (all stops, all modes, one call)
-sl departures --address "Magnus Ladulåsgatan 7" --json
-
-# "When is my bus coming?"
-sl departures --address "Magnus Ladulåsgatan 7" --line 55 --json
-
-# "What buses are near me?"
-sl nearby --lat 59.3121 --lon 18.0643 --lines --json
-
-# "Which lines serve Medborgarplatsen?"
-sl stop-info --stop "Medborgarplatsen" --json
-
-# "How do I get to Arlanda from home?"
-sl trip --from "Magnus Ladulåsgatan 7" --to "Arlanda" --json
-
-# "Any disruptions on the 55?"
-sl deviations --line 55 --json
-
-# "Find nearest stop with metro"
-sl nearby --address "Drottninggatan 45" --lines --json
+sl departures --address "Stureplan" --json
+sl trip --from "Slussen" --to "Kista" --json
 ```
 
-## Transport Modes
+Errors go to stderr as `{"error": "message"}`. Empty results are always `[]`, never `null`.
 
-| Mode  | Flag value | Description                          |
-|-------|-----------|--------------------------------------|
-| Bus   | `BUS`     | City & regional buses                |
-| Metro | `METRO`   | Tunnelbana (subway)                  |
-| Train | `TRAIN`   | Pendeltåg (commuter rail) & trains   |
-| Tram  | `TRAM`    | Tvärbanan, Lidingöbanan, Spårväg City |
-| Ship  | `SHIP`    | Waxholmsbolaget ferries              |
+## Transport modes
 
-## APIs Used
+| Flag value | Description |
+|-----------|-------------|
+| `BUS` | City & regional buses |
+| `METRO` | Tunnelbana (subway) |
+| `TRAIN` | Pendeltåg & regional trains |
+| `TRAM` | Tvärbanan, Lidingöbanan, Spårväg City |
+| `SHIP` | Waxholmsbolaget ferries |
 
-| API | Base URL | Auth |
-|-----|----------|------|
-| [SL Transport](https://www.trafiklab.se/api/our-apis/sl/transport/) | `transport.integration.sl.se/v1` | None |
-| [SL Deviations](https://www.trafiklab.se/api/our-apis/sl/deviations/) | `deviations.integration.sl.se/v1` | None |
-| [SL Journey Planner v2](https://www.trafiklab.se/api/our-apis/sl/journey-planner-2/) | `journeyplanner.integration.sl.se/v2` | None |
+Values are case-sensitive.
 
 ## Development
 
 ```bash
-# Run tests
 go test ./...
-
-# Build
 go build -o sl .
-
-# Build with version info
-go build -ldflags "-X github.com/glundgren93/sl-cli/cmd.Version=1.0.0 -X github.com/glundgren93/sl-cli/cmd.Commit=$(git rev-parse --short HEAD)" -o sl .
 ```
 
 ## License
