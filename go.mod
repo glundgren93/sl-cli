@@ -1,6 +1,6 @@
 module github.com/glundgren93/sl-cli
 
-go 1.25.0
+go 1.25
 
 require (
 	github.com/fatih/color v1.18.0 // indirect
